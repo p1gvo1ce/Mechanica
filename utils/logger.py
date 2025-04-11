@@ -1,6 +1,6 @@
 import os
 import asyncio
-from asyncio import create_task
+import traceback as tb
 from datetime import datetime, timezone
 import aiosqlite
 
@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS logs (
 
 async def write_log_to_db(time=None, level="none", module="none", message="none", traceback=None):
     """
-
     :param time: время логируемого события
     :param level: уровень логирования DEBUG, INFO, WARN, ERROR, CRITICAL
     :param module:  Название модуля выводящего логи
@@ -121,14 +120,11 @@ class Logger():
         self.log(message, "CRITICAL", traceback, color=31)
 
     def EXCEPTION(self, message: str, exc: Exception):
-        import traceback as tb
-
         full_message = f"{message}\n→{str(exc)}"
         self.ERROR(message=full_message, traceback=tb.format_exc())
 
     def log(self, message="NO LOG MESSAGE", mess_level_in=1, traceback=None, color=31, style=5):
         """
-
         :param message: сообщение лога
         :param level: уровень запрошенного вывода лога
         :return: ничего
@@ -138,16 +134,24 @@ class Logger():
         time_frame = log_time.strftime("[%Y.%m.%d %H:%M:%S:%f]")
         log_message = f"[{mess_level_in}] {time_frame} ({self.module_name}) - {message}"
 
+        if self.log_to_file:
+            try:
+                with open(f"logs/debug/{self.module_name}.log", "a", encoding="utf-8") as f:
+                    f.write(log_message+"\n")
+                    if traceback:
+                        f.write(traceback+"\n")
+            except Exception as e:
+                file_error_traceback = "".join(tb.format_exception(type(e), e, e.__traceback__))
+                message += f"\nОшибка записи лога в файл: {e}"
+                if traceback:
+                    traceback += "\n\n[write_to_file error]\n" + file_error_traceback
+                else:
+                    traceback = "[write_to_file error]\n" + file_error_traceback
+
         if self.log_level >= mess_level:
             print(
                 f'\033[{style};{color}m{log_message}\033[m'
             )
-
-        if self.log_to_file:
-            with open(f"logs/debug/{self.module_name}.log", "a", encoding="utf-8") as f:
-                f.write(log_message+"\n")
-                if traceback:
-                    f.write(traceback+"\n")
 
         try:
             asyncio.get_running_loop().create_task(
