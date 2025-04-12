@@ -132,7 +132,8 @@ class Logger():
         mess_level = self.get_int_level(mess_level_in)
         log_time = datetime.now(tz=timezone.utc)
         time_frame = log_time.strftime("[%Y.%m.%d %H:%M:%S:%f]")
-        log_message = f"[{mess_level_in}] {time_frame} ({self.module_name}) - {message}"
+        tab = "\n" + "\t"*2
+        log_message = f"[{mess_level_in}]\t{time_frame} ({self.module_name}){tab + message}"
 
         if self.log_to_file:
             try:
