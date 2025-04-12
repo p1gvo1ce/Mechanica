@@ -5,6 +5,8 @@ import time
 from fastapi import FastAPI, Query
 from typing import List, Optional
 from pathlib import Path
+import re
+import datetime
 
 app = FastAPI()
 
@@ -14,8 +16,75 @@ PROJECT_ROOT = CURRENT_DIR.parent.parent
 
 DB_PATH = PROJECT_ROOT / "logs" / "logs.db"
 
-print("DEBUG: Путь до базы:", DB_PATH)
-print("DEBUG: Существует ли база?", DB_PATH.exists())
+def parse_dsl(dsl_string: str):
+    """
+    Превращает строку-заклинание в SQL-запрос, понятный машине.
+
+    🕯 Поддерживаемые обряды:
+        - AND / OR / NOT — логические связки для построения цепей проклятий
+        - level, module, message, timestamp — допустимые поля вызова
+        - message — интерпретируется как регулярное выражение, ибо текст — это тень смысла
+        - timestamp — принимает знаки: >, <, >=, <=, ибо время — не линейно, но поддаётся сравнению
+
+    📜 Примеры DSL-заклинаний:
+        level:ERROR AND message:"fail.*int"
+        NOT module:ai/logic.py AND timestamp:>2025-04-01T00:00:00
+
+    Возвращает:
+        - where_clause (str) — часть SQL-запроса для обряда фильтрации
+        - params (list) — переменные для подстановки, дабы не тревожить богов инъекциями
+
+    Внимание:
+        - Не поддерживает вложенные скобки. Демоны пока боятся глубокой рекурсии.
+        - Ошибочные выражения будут проигнорированы без предупреждения. Таков наш путь.
+    """
+
+    dsl_string = dsl_string.replace("&&", "AND")
+    dsl_string = dsl_string.replace("||", "OR")
+
+    tokens = re.split(r'\s+(AND|OR|NOT)\s+', dsl_string.strip())
+    sql_parts = []
+    params = []
+    message_regex = None
+
+    for token in tokens:
+        token = token.strip()
+        if token in {"AND", "OR", "NOT"}:
+            sql_parts.append(token)
+            continue
+
+        match = re.match(r'(\w+):([<>]=?|=)?(.*)', token)
+        if not match:
+            continue
+
+        field, op, value = match.groups()
+        field = field.strip()
+        op = op.strip() if op else '='
+        value = value.strip().strip('"')
+
+        if field == "timestamp":
+            try:
+                dt = datetime.datetime.fromisoformat(value)
+                timestamp = int(dt.timestamp() * 1000)
+                sql_parts.append(f"timestamp {op} ?")
+                params.append(timestamp)
+            except ValueError:
+                continue
+
+        elif field == "message":
+            # Мы не фильтруем message в SQL, а передаём его как regex
+            message_regex = value
+            continue
+
+        elif field in {"level", "module"}:
+            sql_parts.append(f"{field} {op} ?")
+            params.append(value)
+
+    where_clause = " ".join(sql_parts)
+    return where_clause, params, message_regex
+
+
+
 
 @app.get("/logs")
 async def get_logs(
@@ -76,3 +145,25 @@ async def get_stats():
         cursor = await db.execute(query)
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+
+@app.get("/logs/dsl")
+async def get_logs_dsl(q: str):
+    where_clause, params, message_regex = parse_dsl(q)
+
+    query = "SELECT * FROM logs"
+    if where_clause:
+        query += f" WHERE {where_clause}"
+    query += " ORDER BY timestamp DESC LIMIT 100"
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(query, params)
+        rows = await cursor.fetchall()
+
+    # Если есть message_regex, отфильтровываем
+    if message_regex is not None:
+        pattern = re.compile(message_regex)
+        filtered = [dict(r) for r in rows if pattern.search(r["message"] or "")]
+        return filtered
+    else:
+        return [dict(r) for r in rows]
