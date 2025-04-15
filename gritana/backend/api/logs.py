@@ -17,7 +17,7 @@ print(DB_PATH)
 async def get_logs(
         level: Optional[str] = None,
         module: Optional[str] = None,
-        limit: int = 100
+        limit: int = 1000
 ):
     print("→ Начало запроса", time.time())
     query = "SELECT * FROM logs WHERE 1=1"
@@ -65,7 +65,7 @@ async def get_stats():
     FROM logs
     GROUP BY hour
     ORDER BY hour DESC
-    LIMIT 100
+    LIMIT 1000
     """
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -80,7 +80,7 @@ async def get_logs_dsl(q: str):
     query = "SELECT * FROM logs"
     if where_clause:
         query += f" WHERE {where_clause}"
-    query += " ORDER BY timestamp DESC LIMIT 100"
+    query += " ORDER BY timestamp DESC LIMIT 1000"
 
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
