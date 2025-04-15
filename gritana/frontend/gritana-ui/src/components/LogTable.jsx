@@ -1,18 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 export default function LogTable() {
-  // Храним все логи, текущую страницу и DSL-запрос
   const [logs, setLogs] = useState([])
   const [currentPage, setCurrentPage] = useState(1)
   const [dslQuery, setDslQuery] = useState('')
+  const [autoRefresh, setAutoRefresh] = useState(false)
   const logsPerPage = 20
+  const intervalRef = useRef(null)
 
-  // При первом рендере — грузим логи
   useEffect(() => {
     fetchLogs()
   }, [])
 
-  // Функция подгрузки логов, учитывая dslQuery
+  useEffect(() => {
+    if (autoRefresh) {
+      intervalRef.current = setInterval(fetchLogs, 1000)
+    } else {
+      clearInterval(intervalRef.current)
+    }
+    return () => clearInterval(intervalRef.current)
+  }, [autoRefresh, dslQuery])
+
   function fetchLogs() {
     const base = 'http://localhost:8000/ritual/logs'
     const url = dslQuery.trim()
@@ -23,18 +31,16 @@ export default function LogTable() {
       .then(res => res.json())
       .then(data => {
         setLogs(data)
-        setCurrentPage(1) // Сброс на первую страницу при новом запросе
+        setCurrentPage(1)
       })
       .catch(err => console.error('Ошибка загрузки логов:', err))
   }
 
-  // Пагинация: вычисляем текущий срез
   const totalPages = Math.ceil(logs.length / logsPerPage)
   const indexOfLastLog = currentPage * logsPerPage
   const indexOfFirstLog = indexOfLastLog - logsPerPage
   const currentLogs = logs.slice(indexOfFirstLog, indexOfLastLog)
 
-  // Цвет текста по уровню
   function getRowStyle(level) {
     switch (level) {
       case 'CRITICAL': return 'text-red-400'
@@ -59,7 +65,7 @@ export default function LogTable() {
         />
       </div>
 
-      {/* ПОЛЕ ДЛЯ DSL-ФИЛЬТРА */}
+      {/* DSL-ФИЛЬТР + КНОПКИ */}
       <div className="mb-6 flex justify-center">
         <div className="flex gap-2 items-center">
           <input
@@ -67,8 +73,7 @@ export default function LogTable() {
             value={dslQuery}
             onChange={e => setDslQuery(e.target.value)}
             placeholder="Пример: level:ERROR AND module:main.py"
-            className="px-4 py-2 w-[500px] bg-zinc-900 text-green-400 border border-gray-700 font-mono text-sm
-                       placeholder:text-gray-600 focus:outline-none focus:ring focus:ring-green-600"
+            className="px-4 py-2 w-[500px] bg-zinc-900 text-green-400 border border-gray-700 font-mono text-sm placeholder:text-gray-600 focus:outline-none focus:ring focus:ring-green-600"
           />
           <button
             onClick={fetchLogs}
@@ -76,19 +81,22 @@ export default function LogTable() {
           >
             🔍 Фильтровать
           </button>
+          <button
+            onClick={() => setAutoRefresh(prev => !prev)}
+            className={`px-4 py-2 font-mono text-sm border ${
+              autoRefresh
+                ? 'bg-red-900 text-white border-red-600 hover:bg-red-800'
+                : 'bg-zinc-800 text-gray-400 border-gray-600 hover:bg-zinc-700'
+            }`}
+          >
+            {autoRefresh ? '⏸ Автообновление' : '▶️ Автообновлять'}
+          </button>
         </div>
       </div>
 
-      {/* СЕТКА: ТАБЛИЦА ЛОГОВ */}
-      <div className="grid grid-cols-[200px_100px_200px_1fr_1fr]
-                      text-sm font-mono text-green-300
-                      border border-gray-700 bg-zinc-950
-                      rounded mx-auto w-fit"
-      >
-        {/* ШАПКА ТАБЛИЦЫ */}
-        <div className="col-span-5 grid grid-cols-[200px_100px_200px_1fr_1fr]
-                        bg-zinc-800 font-bold border-b border-gray-700 text-left"
-        >
+      {/* ТАБЛИЦА ЛОГОВ */}
+      <div className="grid grid-cols-[200px_100px_200px_1fr_1fr] text-sm font-mono text-green-300 border border-gray-700 bg-zinc-950 rounded mx-auto w-fit">
+        <div className="col-span-5 grid grid-cols-[200px_100px_200px_1fr_1fr] bg-zinc-800 font-bold border-b border-gray-700 text-left">
           <div className="p-2 border-r border-gray-700 text-center">Время</div>
           <div className="p-2 border-r border-gray-700 text-center">Уровень</div>
           <div className="p-2 border-r border-gray-700">Модуль</div>
@@ -96,7 +104,6 @@ export default function LogTable() {
           <div className="p-2">Traceback</div>
         </div>
 
-        {/* СТРОКИ ЛОГОВ (currentLogs) */}
         {currentLogs.map(log => {
           const rowStyle = getRowStyle(log.level)
           return (
