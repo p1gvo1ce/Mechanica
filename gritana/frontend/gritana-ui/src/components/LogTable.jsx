@@ -3,9 +3,11 @@ import { useEffect, useState, useRef } from 'react'
 export default function LogTable() {
   const [logs, setLogs] = useState([])
   const [currentPage, setCurrentPage] = useState(1)
+  const [pageInput, setPageInput] = useState('1')
   const [dslQuery, setDslQuery] = useState('')
   const [autoRefresh, setAutoRefresh] = useState(false)
-  const logsPerPage = 20
+  const [logsPerPage, setLogsPerPage] = useState(20)
+  const [pageError, setPageError] = useState(false)
   const intervalRef = useRef(null)
 
   useEffect(() => {
@@ -20,6 +22,10 @@ export default function LogTable() {
     }
     return () => clearInterval(intervalRef.current)
   }, [autoRefresh, dslQuery])
+
+  useEffect(() => {
+    setPageInput(currentPage.toString())
+  }, [currentPage])
 
   function fetchLogs() {
     const base = 'http://localhost:8000/ritual/logs'
@@ -36,7 +42,7 @@ export default function LogTable() {
       .catch(err => console.error('Ошибка загрузки логов:', err))
   }
 
-  const totalPages = Math.ceil(logs.length / logsPerPage)
+  const totalPages = Math.max(1, Math.ceil(logs.length / logsPerPage))
   const indexOfLastLog = currentPage * logsPerPage
   const indexOfFirstLog = indexOfLastLog - logsPerPage
   const currentLogs = logs.slice(indexOfFirstLog, indexOfLastLog)
@@ -53,19 +59,37 @@ export default function LogTable() {
     }
   }
 
+  function handlePageInputChange(e) {
+    const value = e.target.value
+    setPageInput(value)
+
+    const num = parseInt(value)
+    if (!isNaN(num) && num >= 1 && num <= totalPages) {
+      setPageError(false)
+    } else {
+      setPageError(true)
+    }
+  }
+
+  function goToInputPage() {
+    const num = parseInt(pageInput)
+    if (!isNaN(num) && num >= 1 && num <= totalPages) {
+      setCurrentPage(num)
+      setPageError(false)
+    } else {
+      setPageError(true)
+    }
+  }
+
   return (
     <div className="bg-black min-h-screen p-4">
 
-      {/* ЛОГОТИП */}
+      {/* ЛОГО */}
       <div className="flex justify-center mb-4">
-        <img
-          src="/src/assets/gritana-logo.png"
-          alt="GRITANA Logo"
-          className="h-24 object-contain"
-        />
+        <img src="/src/assets/gritana-logo.png" alt="GRITANA Logo" className="h-24 object-contain" />
       </div>
 
-      {/* DSL-ФИЛЬТР + КНОПКИ */}
+      {/* ФИЛЬТРЫ + КНОПКИ */}
       <div className="mb-6 flex justify-center">
         <div className="flex gap-2 items-center">
           <input
@@ -94,7 +118,7 @@ export default function LogTable() {
         </div>
       </div>
 
-      {/* ТАБЛИЦА ЛОГОВ */}
+      {/* ТАБЛИЦА */}
       <div className="grid grid-cols-[200px_100px_200px_1fr_1fr] text-sm font-mono text-green-300 border border-gray-700 bg-zinc-950 rounded mx-auto w-fit">
         <div className="col-span-5 grid grid-cols-[200px_100px_200px_1fr_1fr] bg-zinc-800 font-bold border-b border-gray-700 text-left">
           <div className="p-2 border-r border-gray-700 text-center">Время</div>
@@ -108,24 +132,14 @@ export default function LogTable() {
           const rowStyle = getRowStyle(log.level)
           return (
             <div key={log.id} className="contents">
-              <div className={`p-2 border-t border-gray-700 text-center ${rowStyle}`}>
-                {new Date(log.timestamp).toLocaleString()}
-              </div>
-              <div className={`p-2 border-t border-gray-700 text-center ${rowStyle}`}>
-                {log.level}
-              </div>
-              <div className={`p-2 border-t border-gray-700 ${rowStyle}`}>
-                {log.module}
-              </div>
-              <div className={`p-2 border-t border-gray-700 whitespace-pre-wrap ${rowStyle}`}>
-                {log.message}
-              </div>
+              <div className={`p-2 border-t border-gray-700 text-center ${rowStyle}`}>{new Date(log.timestamp).toLocaleString()}</div>
+              <div className={`p-2 border-t border-gray-700 text-center ${rowStyle}`}>{log.level}</div>
+              <div className={`p-2 border-t border-gray-700 ${rowStyle}`}>{log.module}</div>
+              <div className={`p-2 border-t border-gray-700 whitespace-pre-wrap ${rowStyle}`}>{log.message}</div>
               <div className={`p-2 border-t border-gray-700 ${rowStyle}`}>
                 {log.traceback ? (
                   <details className="whitespace-pre-wrap">
-                    <summary className="cursor-pointer text-red-300 hover:text-red-200">
-                      Traceback
-                    </summary>
+                    <summary className="cursor-pointer text-red-300 hover:text-red-200">Traceback</summary>
                     {log.traceback}
                   </details>
                 ) : (
@@ -146,9 +160,25 @@ export default function LogTable() {
         >
           ← Назад
         </button>
-        <span className="text-gray-500">
-          Страница {currentPage} из {totalPages}
-        </span>
+
+
+
+
+        <div className="flex items-center gap-1">
+          <span>1 ...</span>
+          <input
+            type="text"
+            value={pageInput}
+            onChange={handlePageInputChange}
+            onBlur={goToInputPage}
+            onKeyDown={(e) => e.key === 'Enter' && goToInputPage()}
+            className={`w-12 text-center border px-2 py-1 outline-none bg-black ${
+              pageError ? 'border-red-500 text-red-400' : 'border-gray-700 text-green-400'
+            }`}
+          />
+          <span>... {totalPages}</span>
+        </div>
+
         <button
           className="px-4 py-1 border border-gray-700 hover:bg-zinc-800 disabled:opacity-30"
           disabled={currentPage === totalPages || totalPages === 0}
@@ -156,6 +186,20 @@ export default function LogTable() {
         >
           Вперёд →
         </button>
+
+        <select
+          value={logsPerPage}
+          onChange={e => {
+            setLogsPerPage(parseInt(e.target.value))
+            setCurrentPage(1)
+          }}
+          className="ml-4 px-2 py-1 bg-black border border-gray-700 text-green-300 font-mono text-sm"
+        >
+          <option value={20}>20</option>
+          <option value={50}>50</option>
+          <option value={100}>100</option>
+        </select>
+
       </div>
     </div>
   )
